@@ -37,19 +37,38 @@ const crearProducto = async (req, res) => {
 
     try {
         const { nombre, descripcion, precio_unitario, stock_disponible, categoria_id } = req.body;
+        
+        // 🛡️ Generamos un SKU aleatorio seguro
         const sku = `PROD-${Math.floor(100000 + Math.random() * 900000)}`;
+        
+        // Mapeamos la URL física que Multer subió a Cloudinary
         const imagen_url = req.file ? req.file.path : 'https://res.cloudinary.com/dtjoo7oge/image/upload/v1782105021/default.png';
 
+        // 🛡️ Tu ID es UUID y se autogenera en la BD, por lo que NO lo enviamos en los campos del INSERT
         const query = `
             INSERT INTO Productos (sku, nombre, descripcion, precio_unitario, stock_disponible, imagen_url, categoria_id, status)
             VALUES ($1, $2, $3, $4, $5, $6, $7, 'Publicado')
             RETURNING *
         `;
         
-        const result = await pool.query(query, [sku, nombre, descripcion, precio_unitario, stock_disponible, imagen_url, categoria_id]);
+        const result = await pool.query(query, [
+            sku, 
+            nombre, 
+            descripcion || '', 
+            parseFloat(precio_unitario) || 0.00, 
+            parseInt(stock_disponible, 10) || 0, 
+            imagen_url, 
+            parseInt(categoria_id, 10) || 1
+        ]);
+        
+        // 🛡️ CONTROL DE FLUJO: Validamos que la BD haya respondido filas válidas antes de leer el índice [0]
+        if (!result || !result.rows || result.rows.length === 0) {
+            return res.status(400).json({ status: "error", mensaje: "La base de datos procesó la solicitud pero no retornó el registro creado." });
+        }
+
         const nuevoProducto = result.rows[0];
 
-        // 🛡️ OWASP A09:2025 - Registro de Auditoría: Creación de Producto (Módulo de Catálogo)
+        // 🛡️ OWASP A09:2025 - Registro inmediato en la Bitácora de Auditoría (Ya blindada contra proxies)
         await registrarAccionAuditoria(
             req,
             'CREAR_PRODUCTO',
@@ -58,9 +77,10 @@ const crearProducto = async (req, res) => {
         );
         
         return res.status(201).json({ status: "success", producto: nuevoProducto });
+
     } catch (error) {
-        console.error(`🚨 [INVENTORY EXCEPTION] [${new Date().toISOString()}] - Fallo en inserción de producto:`, error.message);
-        return res.status(500).json({ status: "error", mensaje: 'Error interno en el servidor al registrar el nuevo producto.' });
+        console.error(`🚨 [INVENTORY EXCEPTION] [${new Date().toISOString()}] - Fallo crítico en inserción:`, error.message);
+        return res.status(500).json({ status: "error", mensaje: `Error interno en el servidor al registrar el producto: ${error.message}` });
     }
 };
 
