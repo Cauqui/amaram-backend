@@ -5,6 +5,8 @@ const cors = require('cors');
 const helmet = require('helmet'); // 🛡️ OWASP A02:2025 - Cabeceras HTTP seguras perimetrales
 
 const app = express();
+// 🛡️ OWASP A05:2025 - Habilitar confianza en el proxy perimetral de Render para express-rate-limit
+app.set('trust proxy', 1);
 const port = process.env.PORT || 3000;
 
 // Middlewares globales de procesamiento y seguridad
